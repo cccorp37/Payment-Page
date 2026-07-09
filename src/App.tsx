@@ -88,12 +88,15 @@ export default function App() {
       };
     }
 
-    let formattedAccount = momoNumber.replace(/\D/g, '');
+    let cleaned = momoNumber.replace(/\D/g, '');
     if (country.dialCode) {
-      if (!formattedAccount.startsWith(country.dialCode)) {
-         formattedAccount = country.dialCode + formattedAccount.replace(/^0+/, '');
+      if (cleaned.startsWith(country.dialCode)) {
+        cleaned = cleaned.slice(country.dialCode.length);
+      } else if (cleaned.startsWith('00' + country.dialCode)) {
+        cleaned = cleaned.slice(country.dialCode.length + 2);
       }
     }
+    const formattedAccount = country.dialCode + cleaned;
 
     const phoneRules: Record<string, RegExp> = {
       'BJ': /^229\d{8}$/,
@@ -245,9 +248,13 @@ export default function App() {
     
     // Si c'est Mobile Money, assurer le format international sans '+'
     if (PAYMENT_METHODS_DATA[paymentMethod]?.type === 'momo' && country.dialCode) {
-      if (!formattedAccount.startsWith(country.dialCode)) {
-         formattedAccount = country.dialCode + formattedAccount.replace(/^0+/, ''); // enlève les 0 au début si présents
+      let cleaned = momoNumber.replace(/\D/g, '');
+      if (cleaned.startsWith(country.dialCode)) {
+        cleaned = cleaned.slice(country.dialCode.length);
+      } else if (cleaned.startsWith('00' + country.dialCode)) {
+        cleaned = cleaned.slice(country.dialCode.length + 2);
       }
+      formattedAccount = country.dialCode + cleaned;
       
       const phoneRules: Record<string, RegExp> = {
         'BJ': /^229\d{8}$/,
@@ -322,6 +329,41 @@ export default function App() {
       }
     }
   };
+
+  const checkPaymentStatus = async (transactionId: string, isManual = false) => {
+    try {
+      const response = await fetch(`/api/payment/status/${transactionId}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.status === "success") {
+          setIsPending(false);
+          setIsSuccess(true);
+        } else if (isManual) {
+          alert("Le paiement n'est pas encore validé. Veuillez confirmer la transaction sur votre téléphone.");
+        }
+      } else if (isManual) {
+        alert("Impossible de vérifier le statut du paiement pour le moment.");
+      }
+    } catch (e) {
+      console.error("Erreur vérification paiement", e);
+      if (isManual) {
+        alert("Erreur de connexion.");
+      }
+    }
+  };
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isPending && receiptData?.transactionId) {
+      // Poll every 60 seconds
+      interval = setInterval(() => {
+        checkPaymentStatus(receiptData.transactionId);
+      }, 60000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isPending, receiptData]);
 
   const resetForm = () => {
     setIsSuccess(false);
@@ -438,10 +480,11 @@ export default function App() {
 
               <div className="mt-10 w-full max-w-xs space-y-3">
                 <button 
-                  onClick={() => { setIsPending(false); setIsSuccess(true); }}
-                  className="w-full bg-green-500 text-white font-semibold py-3 rounded-lg hover:bg-green-600 transition-colors shadow-sm"
+                  onClick={() => checkPaymentStatus(receiptData?.transactionId, true)}
+                  className="w-full bg-green-500 text-white font-semibold py-3 rounded-lg hover:bg-green-600 transition-colors shadow-sm flex items-center justify-center gap-2"
                 >
-                  J'ai validé le paiement
+                  <ShieldCheck className="w-5 h-5" />
+                  Vérifier le paiement
                 </button>
                 <button 
                   onClick={resetForm}
@@ -603,36 +646,41 @@ export default function App() {
                     <label htmlFor="momoNumber" className="block text-sm font-medium text-gray-700 mb-1">
                       Numéro de téléphone ({country.name})
                     </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Smartphone className="h-5 w-5 text-gray-400" />
-                      </div>
-                      <input 
-                        type="tel" 
-                        id="momoNumber" 
-                        placeholder={`Ex: ${PHONE_FORMAT_DESCRIPTIONS[country.code]?.example || '690 00 00 00'}`}
-                        required 
-                        value={momoNumber}
-                        onChange={(e) => setMomoNumber(e.target.value)}
-                        className={`block w-full pl-10 pr-10 py-3 border rounded-lg sm:text-sm transition-colors ${
-                          validation.isEmpty 
-                            ? "border-gray-300 focus:ring-pink-500 focus:border-pink-500 focus:outline-none" 
-                            : validation.isValid 
-                            ? "border-green-500 focus:ring-green-500 focus:border-green-500 bg-green-50/20 focus:outline-none" 
-                            : "border-red-500 focus:ring-red-500 focus:border-red-500 bg-red-50/20 focus:outline-none"
-                        }`}
-                      />
-                      
-                      {/* Icône de statut à droite du champ */}
-                      {!validation.isEmpty && (
-                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                          {validation.isValid ? (
-                            <Check className="h-5 w-5 text-green-500" />
-                          ) : (
-                            <X className="h-5 w-5 text-red-500" />
-                          )}
+                    <div className="relative flex rounded-lg shadow-sm">
+                      <span className="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-gray-300 bg-gray-50 text-gray-600 sm:text-sm font-semibold">
+                        +{country.dialCode}
+                      </span>
+                      <div className="relative flex-grow">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Smartphone className="h-5 w-5 text-gray-400" />
                         </div>
-                      )}
+                        <input 
+                          type="tel" 
+                          id="momoNumber" 
+                          placeholder={`Ex: ${PHONE_FORMAT_DESCRIPTIONS[country.code]?.example || '690 00 00 00'}`}
+                          required 
+                          value={momoNumber}
+                          onChange={(e) => setMomoNumber(e.target.value)}
+                          className={`block w-full pl-10 pr-10 py-3 border rounded-r-lg sm:text-sm transition-colors ${
+                            validation.isEmpty 
+                              ? "border-gray-300 focus:ring-pink-500 focus:border-pink-500 focus:outline-none" 
+                              : validation.isValid 
+                              ? "border-green-500 focus:ring-green-500 focus:border-green-500 bg-green-50/20 focus:outline-none z-10 relative" 
+                              : "border-red-500 focus:ring-red-500 focus:border-red-500 bg-red-50/20 focus:outline-none z-10 relative"
+                          }`}
+                        />
+                        
+                        {/* Icône de statut à droite du champ */}
+                        {!validation.isEmpty && (
+                          <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none z-20">
+                            {validation.isValid ? (
+                              <Check className="h-5 w-5 text-green-500" />
+                            ) : (
+                              <X className="h-5 w-5 text-red-500" />
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Indicateur textuel et explicatif sous le champ */}

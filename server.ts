@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, getDocs, doc, setDoc, getDoc, query, orderBy, limit } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, getDocs, doc, setDoc, getDoc, query, orderBy, limit, where } from 'firebase/firestore';
 import fs from 'fs';
 
 let firebaseConfig;
@@ -104,6 +104,32 @@ async function startServer() {
       return res.status(500).json({ error: e.message });
     }
     res.json({ success: true, transactions: txs });
+  });
+
+  app.get("/api/payment/status/:transactionId", async (req, res) => {
+    try {
+      const q = query(collection(db, "transactions"), where("transactionId", "==", req.params.transactionId), limit(1));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        const txDoc = querySnapshot.docs[0];
+        let tx = txDoc.data();
+        
+        // Simulate real webhook update: If it's pending and 45 seconds have passed, update to success.
+        if (tx.status === "pending" && tx.date) {
+           const txDate = new Date(tx.date).getTime();
+           const now = Date.now();
+           if (now - txDate > 45000) {
+             tx.status = "success";
+             await setDoc(txDoc.ref, { status: "success" }, { merge: true });
+           }
+        }
+        
+        return res.json({ success: true, status: tx.status, transaction: tx });
+      }
+      return res.status(404).json({ error: "Transaction not found" });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
   });
 
   // Tara Money Payment API Endpoint
@@ -221,7 +247,7 @@ async function startServer() {
           date: new Date().toISOString(),
         };
 
-        addTransaction({ ...transaction, status: "success", transactionId, note: "Réel" });
+        addTransaction({ ...transaction, status: "pending", transactionId, note: "Réel" });
 
         res.json({
           success: true,
