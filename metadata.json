@@ -1,0 +1,6 @@
+{
+  "name": "Paiement Sécurisé",
+  "description": "Portail de paiement sécurisé R&C AGENCY avec intégration Tara Money",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

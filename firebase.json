@@ -1,0 +1,8 @@
+{
+  "firestore": [
+    {
+      "database": "ai-studio-paiementscuris-70c716c0-25eb-4690-a724-7d2f47bca6a4",
+      "rules": "firestore.rules"
+    }
+  ]
+}
